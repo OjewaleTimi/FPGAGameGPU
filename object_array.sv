@@ -7,8 +7,8 @@ module object_array #(parameter NUM_OBJECTS = 8)(
     input logic [15:0] addr,
     input logic write_enable,
 
-    output logic [NUM_OBJECTS - 1 :0] enable,
-    output logic [11:0] video_on [NUM_OBJECTS - 1 : 0]
+    output logic [NUM_OBJECTS - 1 :0] active,
+    output logic [11:0] pixel_color [NUM_OBJECTS - 1 : 0]
     );  
         
     logic [3:0] local_offset;
@@ -32,7 +32,7 @@ module object_array #(parameter NUM_OBJECTS = 8)(
                 .clk(clk),
                 .reset(reset),
                 .addr(local_offset),
-                .write_enable(write_enable),
+                .write_enable(obj_write_enable),
                 .write_data(write_data),
 
                 .x(x),.y(y),
@@ -49,11 +49,10 @@ module object_array #(parameter NUM_OBJECTS = 8)(
                 .w(w), .h(h),
                 .shape_type(shape_type),
                 .enable(enable),
-                .video_on(video_on)
+                .video_on(active[i]),
                 .rgb_color(color),
-            )
-              
-                
+                .pixel_color(pixel_color[i])
+            );
         end
     endgenerate 
 
