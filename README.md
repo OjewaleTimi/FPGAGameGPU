@@ -92,15 +92,15 @@ repo-root/
 | Module | Hand-written RTL? | Status | Owner |
 |---|---|---|---|
 | `vga_controller` | Yes (already built) | ✅ Done | — |
-| `primitive_object` | Yes | ⬜ Phase 1–2 | — |
-| `object_reg_slot` | Yes | ⬜ Phase 4 | — |
-| `object_array` | Yes | ⬜ Phase 5–6 | — |
+| `primitive_object` | Yes |  ✅ Done | — |
+| `object_reg_slot` | Yes |  ✅ Done | — |
+| `object_array` | Yes |  ✅ Done | — |
 | `compositor` | Yes | ⬜ Phase 3 (manual), Phase 5 (generalized) | — |
 | `vga_top` | Yes | ⬜ Phase 1 (wire-through), grows each phase | — |
 | AXI4-Lite wrapper | Vivado-generated, we fill user-logic | ⬜ Phase 7 | — |
 | MicroBlaze + interconnect + BRAM + clocking wizard | Vivado Block Design GUI | ⬜ Phase 8 | — |
 
-Update the Status column as your team completes each phase. This table is the fastest way for anyone joining the project to see where things stand.
+
 
 ---
 
