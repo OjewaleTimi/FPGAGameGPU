@@ -12,7 +12,7 @@ module object_array #(parameter NUM_OBJECTS = 8)(
     );  
         
     logic [3:0] local_offset;
-    logic [12:0] obj_index;
+    logic [11:0] obj_index;
 
     assign local_offset = addr[3:0];
     assign obj_index = addr[15:4];
