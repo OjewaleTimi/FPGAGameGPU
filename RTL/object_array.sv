@@ -8,9 +8,10 @@ module object_array #(parameter NUM_OBJECTS = 8)(
     input logic write_enable,
 
     output logic [NUM_OBJECTS - 1 :0] active,
-    output logic [11:0] pixel_color [NUM_OBJECTS - 1 : 0]
-    );  
-        
+    output logic [11:0] pixel_color [NUM_OBJECTS - 1 : 0],
+    output logic [10*NUM_OBJECTS - 1 : 0] x_debug_flat
+    );
+
     logic [3:0] local_offset;
     logic [11:0] obj_index;
 
@@ -18,17 +19,18 @@ module object_array #(parameter NUM_OBJECTS = 8)(
     assign obj_index = addr[15:4];
 
     genvar i;
-    generate 
-        for(i = 0; i < NUM_OBJECTS; i = i + 1) begin : obj_gen
+    generate
+        for (i = 0; i < NUM_OBJECTS; i = i + 1) begin : obj_gen
             logic [9:0] x,y,w,h;
             logic enable;
             logic [11:0] color;
             logic [1:0] shape_type;
             logic obj_write_enable;
 
-            assign obj_write_enable = write_enable & (obj_index ==  i);
-            
-              register_system genn(
+            assign obj_write_enable = write_enable & (obj_index == i);
+            assign x_debug_flat[i*10 +: 10] = x;
+
+            register_system genn(
                 .clk(clk),
                 .reset(reset),
                 .addr(local_offset),
@@ -54,7 +56,6 @@ module object_array #(parameter NUM_OBJECTS = 8)(
                 .pixel_color(pixel_color[i])
             );
         end
-    endgenerate 
-
+    endgenerate
 
 endmodule
