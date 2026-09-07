@@ -1,0 +1,83 @@
+$date
+	Mon Sep 07 10:32:47 2026
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1ps
+$end
+$scope module tb_compositor $end
+$var wire 12 ! final_color [11:0] $end
+$var parameter 32 " NUM_OBJECTS $end
+$var reg 8 # active [7:0] $end
+$var reg 12 $ background_color [11:0] $end
+$var integer 32 % fail_count [31:0] $end
+$var integer 32 & pass_count [31:0] $end
+$scope module dut $end
+$var wire 8 ' active [7:0] $end
+$var wire 12 ( background_color [11:0] $end
+$var parameter 32 ) NUM_OBJECTS $end
+$var reg 12 * final_color [11:0] $end
+$var integer 32 + j [31:0] $end
+$upscope $end
+$scope task check_result $end
+$upscope $end
+$scope task reset_objects $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+b1000 )
+b1000 "
+$end
+#0
+$dumpvars
+b1000 +
+b111111111111 *
+b111111111111 (
+b0 '
+b0 &
+b0 %
+b111111111111 $
+b0 #
+b111111111111 !
+$end
+#1000
+b0 !
+b0 *
+b1000 +
+b1 #
+b1 '
+b1 &
+#2000
+b1000 +
+b11100000000 !
+b11100000000 *
+b10000000 #
+b10000000 '
+b10 &
+#3000
+b1000 +
+b11100000000 !
+b11100000000 *
+b10000001 #
+b10000001 '
+b11 &
+#4000
+b1000 +
+b11100000000 !
+b11100000000 *
+b11111111 #
+b11111111 '
+b100 &
+#5000
+b1000 +
+b10000000000 !
+b10000000000 *
+b10100 #
+b10100 '
+b101 &
+#6000
+b110 &
