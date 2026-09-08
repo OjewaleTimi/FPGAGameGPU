@@ -12,31 +12,32 @@ module register_system (
     output logic enable
 );
 
-    always_ff @(posedge clk or posedge reset)
+    always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
-            x <= 10'b0;
-            y <= 10'b0;
-            w <= 10'b0;
-            h <= 10'b0;
-            color <= 12'b0;
+            x          <= 10'b0;
+            y          <= 10'b0;
+            w          <= 10'b0;
+            h          <= 10'b0;
+            color      <= 12'b0;
             shape_type <= 2'b0;
-            enable <= 1'b0;
+            enable     <= 1'b0;
         end
         else if (write_enable) begin
             case (addr)
                 4'h0: x <= write_data[9:0];
                 4'h4: y <= write_data[9:0];
                 4'h8: begin
-                    w <= write_data[31:16];
-                    h <= write_data[15:0];
+                    w <= write_data[25:16]; 
+                    h <= write_data[9:0];
                 end
                 4'hC: begin
                     color      <= write_data[11:0];
                     enable     <= write_data[12];
                     shape_type <= write_data[14:13];
                 end
-                default: ;
+                default: ; 
             endcase
         end
+    end
 
 endmodule
