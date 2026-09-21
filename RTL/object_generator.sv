@@ -1,6 +1,6 @@
 module object_generator (
     input  logic clk,
-    input  logic [9:0] pixel_x, pixel_y,   
+    input  logic [9:0] pixel_x, pixel_y,
     input  logic [9:0] x, y,
     input  logic [9:0] w, h,
     input  logic [1:0] shape_type,

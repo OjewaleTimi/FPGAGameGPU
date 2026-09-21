@@ -1,4 +1,4 @@
-module object_array #(parameter NUM_OBJECTS = 8)(
+module object_array #(parameter NUM_OBJECTS = 20)(
     input logic clk,
     input logic reset,
     input logic [9:0] pixel_x, pixel_y,
