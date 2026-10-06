@@ -7,6 +7,8 @@
 
 ---
 
+<img width="1573" height="707" alt="Screenshot 2026-10-06 110510" src="https://github.com/user-attachments/assets/1f1b8631-baa7-4e4b-9a7f-d28e6635659e" />
+
 ## 1. Project Overview
 
 This project implements a **hardware-accelerated 2D sprite/object rendering engine** on an FPGA, controllable at runtime by a soft-core CPU (MicroBlaze). Instead of a CPU writing pixels into a framebuffer, the CPU writes small **object descriptors** (position, size, color, shape, enable) into a memory-mapped register file. Dedicated parallel hardware then redraws every object, every pixel, every frame, continuously and independently of CPU speed.
@@ -164,6 +166,7 @@ No combinational logic beyond field unpacking. This module intentionally does no
 
 **Parameters:**
 | Name | Default | Description |
+
 |---|---|---|
 | `N_OBJECTS` | 8 | number of sprite slots |
 | `ADDR_WIDTH` | `$clog2(N_OBJECTS*8)` | derived from register map, Section 5 |
