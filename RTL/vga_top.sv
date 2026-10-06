@@ -1,21 +1,27 @@
 `timescale 1ns / 1ps
+//
+// vga_top.sv  (updated for BRAM-backed text overlay)
+//
+// text_overlay's outputs now lag pixel_x/pixel_y by exactly 1 clock
+// cycle (the font ROM is a real BRAM with 1 cycle of read latency --
+// see font_rom.sv / text_overlay.sv). To keep text aligned with shapes
+// and background, this module now delays hsync/vsync/video_on and the
+// compositor's output by that same 1 cycle before the final mux. This
+// shifts the whole frame later by one 100MHz clock (10ns) -- far below
+// one pixel period (40ns at the 25MHz effective pixel rate) and totally
+// imperceptible, since hsync/vsync/color all move together.
+//
 module vga_top #(
-    parameter NUM_OBJECTS = 8
+    parameter NUM_OBJECTS = 25
 )(
     input  logic        clk_100MHz,
     input  logic        reset,
 
-    // --- Object write bus (pre-AXI control interface, Phase 6) ---
-    // write_addr[15:4] = which object slot (0 .. NUM_OBJECTS-1)
-    // write_addr[3:0]  = which register within that slot (0x0/0x4/0x8/0xC)
     input  logic [15:0] write_addr,
     input  logic [31:0] write_data,
     input  logic        write_enable,
-
-    // the background color logic
     input  logic [11:0] background_color,
 
-    // --- Physical VGA output pins ---
     output logic        hsync,
     output logic        vsync,
     output logic [3:0]  vga_red,
@@ -23,43 +29,22 @@ module vga_top #(
     output logic [3:0]  vga_blue
 );
 
-    //================================================================
-    // STAGE 1 -- VGA timing generator (existing module, unchanged)
-    //
-    // This is the "heartbeat" of the whole design. It free-runs off
-    // clk_100MHz and continuously sweeps pixel_x/pixel_y across the
-    // full 800x525 timing grid (640x480 visible + porches + sync).
-    // Every other stage below reacts to whatever position it reports
-    // -- nothing here waits for or synchronizes with software.
-    //================================================================
     logic [9:0] pixel_x, pixel_y;
-    logic       video_on;  // HIGH only when (pixel_x,pixel_y) is inside the visible 640x480 area
-    logic       p_tick;    // internal 25MHz pixel-rate enable tick; not needed outside this module
+    logic       video_on;
+    logic       p_tick;
+    logic       hsync_raw, vsync_raw;
 
     vga_controller vga_ctrl_inst (
         .clk_100MHz (clk_100MHz),
         .reset      (reset),
-        .hsync      (hsync),
-        .vsync      (vsync),
+        .hsync      (hsync_raw),
+        .vsync      (vsync_raw),
         .p_tick     (p_tick),
         .video_on   (video_on),
         .x          (pixel_x),
         .y          (pixel_y)
     );
 
-    //================================================================
-    // STAGE 2 -- Object array
-    //
-    // Instantiates NUM_OBJECTS parallel copies of (register_system +
-    // object_generator). Every single one of them evaluates the SAME
-    // (pixel_x, pixel_y) every cycle, independently deciding:
-    //   - active[i]      : "is this pixel mine?"
-    //   - pixel_color[i] : "if so, what color am I?"
-    //
-    // All address decoding (which slot a write targets) happens
-    // INSIDE object_array -- this top level just passes the raw bus
-    // through untouched.
-    //================================================================
     logic [NUM_OBJECTS-1:0] active;
     logic [11:0]            pixel_color [NUM_OBJECTS-1:0];
 
@@ -77,16 +62,6 @@ module vga_top #(
         .pixel_color  (pixel_color)
     );
 
-    //================================================================
-    // STAGE 3 -- Compositor
-    //
-    // object_array can legally report MULTIPLE objects as "active"
-    // for the same pixel (overlapping shapes). The compositor picks
-    // exactly one winner -- see the PRIORITY / Z-ORDER NOTE at the
-    // top of this file for exactly which slot wins on overlap.
-    // If no object is active, it falls back to whatever this top
-    // level's background_color input is currently driving.
-    //================================================================
     logic [11:0] composited_color;
 
     compositor #(
@@ -98,32 +73,46 @@ module vga_top #(
         .final_color      (composited_color)
     );
 
-    //================================================================
-    // STAGE 4 -- Blanking mux + physical pin mapping
-    //
-    // WHY THIS STAGE EXISTS: vga_controller's pixel_x/pixel_y sweep
-    // all the way up to HMAX/VMAX (799/524), not just the visible
-    // 0..639 / 0..479 range -- the extra counts are the horizontal
-    // and vertical porches + sync pulses, which are NOT part of the
-    // visible image. video_on is the signal that tells us whether we
-    // are currently inside the visible area or not.
-    //
-    // Nothing in object_array or compositor guards against this on
-    // its own, so we force the output to black here whenever
-    // video_on is low, regardless of what the compositor produced.
-    // Skipping this step risks driving unintended color data during
-    // the sync timing region, which can look like a corrupted or
-    // unstable image on some monitors.
-    //
-    // COLOR FORMAT: 12-bit RGB444 is split evenly across the Basys
-    // 3's three 4-bit VGA DAC channels:
-    //   composited_color[11:8] -> Red
-    //   composited_color[7:4]  -> Green
-    //   composited_color[3:0]  -> Blue
-    //================================================================
-    logic [11:0] rgb_out;
-    assign rgb_out = video_on ? composited_color : 12'h000;
+    // ---- Text overlay: BRAM font, 1 cycle of latency ----
+    logic        text_active;
+    logic [11:0] text_color;
 
+    text_overlay #(
+        .TEXT_COLS (80),
+        .TEXT_ROWS (30)
+    ) text_overlay_inst (
+        .clk          (clk_100MHz),
+        .reset        (reset),
+        .pixel_x      (pixel_x),
+        .pixel_y      (pixel_y),
+        .addr         (write_addr),
+        .write_data   (write_data),
+        .write_enable (write_enable),
+        .text_active  (text_active),
+        .text_color   (text_color)
+    );
+
+    // ---- 1-cycle pipeline register: realign shapes/background/sync
+    //      with the BRAM-delayed text_active/text_color ----
+    logic        video_on_d1, hsync_d1, vsync_d1;
+    logic [11:0] composited_color_d1;
+
+    always_ff @(posedge clk_100MHz) begin
+        video_on_d1          <= video_on;
+        hsync_d1             <= hsync_raw;
+        vsync_d1             <= vsync_raw;
+        composited_color_d1  <= composited_color;
+    end
+
+    // Text draws on top of everything else
+    logic [11:0] layered_color;
+    assign layered_color = text_active ? text_color : composited_color_d1;
+
+    logic [11:0] rgb_out;
+    assign rgb_out = video_on_d1 ? layered_color : 12'h000;
+
+    assign hsync     = hsync_d1;
+    assign vsync     = vsync_d1;
     assign vga_red   = rgb_out[11:8];
     assign vga_green = rgb_out[7:4];
     assign vga_blue  = rgb_out[3:0];

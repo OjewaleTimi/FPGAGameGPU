@@ -1,5 +1,5 @@
 module compositor #(
-    parameter NUM_OBJECTS = 8
+    parameter NUM_OBJECTS = 20
 )(
     input logic [NUM_OBJECTS-1:0] active,
     input logic [11:0] pixel_color [NUM_OBJECTS-1:0],
