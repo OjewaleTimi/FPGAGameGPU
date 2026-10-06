@@ -1,5 +1,7 @@
 # FPGA VGA Sprite Engine — Project Documentation
 
+Project status: active architecture and RTL planning in progress.
+
 **Target board:** Digilent Basys 3 (Xilinx Artix-7, XC7A35T)
 **Display:** VGA, 640×480 @ 60Hz
 **HDL:** SystemVerilog (RTL) + C (MicroBlaze application)
@@ -11,15 +13,15 @@
 
 ## 1. Project Overview
 
-This project implements a hardware-accelerated 2D sprite/object rendering engine on an FPGA, controllable at runtime by a soft-core CPU (MicroBlaze). Instead of a CPU writing pixels into a framebuffer every frame, software updates object descriptors and the FPGA hardware evaluates all active objects in parallel for each pixel. The result is a classic hardware-accelerated rendering architecture: software decides what is on screen, while hardware decides how it is drawn.
+This project implements a hardware-accelerated 2D sprite/object rendering engine on an FPGA, controllable at runtime by a soft-core CPU (MicroBlaze). Instead of a CPU writing a full framebuffer every frame, software updates a small set of object descriptors while the FPGA hardware evaluates active objects in parallel for every pixel. The result is a classic hardware-accelerated sprite pipeline: software decides what should be shown, while hardware decides how it gets drawn.
 
-This is the same architectural idea used in classic sprite-based arcade and console hardware: software decides what should be on screen; hardware decides how it gets drawn, every 25 MHz pixel clock.
+This is the same architectural idea used in classic sprite-based arcade and console hardware: software decides what should be on screen; hardware decides how it gets drawn every 25 MHz pixel clock.
 
 ### 1.1 Why this architecture
 
 | Concern | How this design solves it |
 |---|---|
-| Frame rate stability | VGA controller scans at a fixed, independent rate. CPU speed cannot cause stutter — it can only cause stale positions. |
+| Frame rate stability | VGA controller scans at a fixed, independent rate. CPU speed cannot cause stutter; it can only cause stale positions. |
 | CPU workload | Only a few bytes are written per object per game-logic tick, not a full framebuffer. |
 | Scaling object count | Costs FPGA fabric (LUTs/FFs) via a generate loop, not CPU cycles — all objects are evaluated in parallel every pixel. |
 | Reusability | Shape hit-test logic (`primitive_object`) is written once and instantiated N times. |
@@ -157,7 +159,7 @@ repo-root/
 | `wr_data` | in | 32-bit write data |
 | `obj_x, obj_y, obj_w, obj_h, obj_color, shape_type, enable` | out | unpacked fields for `primitive_object` |
 
-No combinational logic beyond field unpacking. This module intentionally does nothing "smart."
+No combinational logic beyond field unpacking. This module intentionally does nothing “smart.”
 
 ---
 
@@ -184,7 +186,7 @@ No combinational logic beyond field unpacking. This module intentionally does no
 | `hit[N_OBJECTS-1:0]` | out | one hit bit per object, to compositor |
 | `color[N_OBJECTS-1:0]` | out | one color bus per object, to compositor |
 
-**Address decode logic:** `slot_index = addr[ADDR_WIDTH-1:3]`, `word_sel = addr[2]` (given 2 words = 8 bytes per object; adjust if register map changes). Route `we` to the selected slot's `wr_en` only when the address falls within range. Off-by-one bugs are common here — test every slot and every word in simulation.
+**Address decode logic:** `slot_index = addr[ADDR_WIDTH-1:3]`, `word_sel = addr[2]` (given 2 words = 8 bytes per object; adjust if register map changes). Route `we` to the selected slot's `wr_en` only when the address falls within that slot. Off-by-one errors are common here — test every slot and every word in simulation.
 
 ---
 
@@ -201,7 +203,7 @@ No combinational logic beyond field unpacking. This module intentionally does no
 | `bg_color` | in | background RGB444 |
 | `rgb_out` | out | final RGB444 for this pixel |
 
-**Priority rule:** lowest slot index wins (object 0 drawn "on top"). Document this explicitly in code — it is your z-order convention and must be consistent with how the team assigns slot numbers to objects.
+**Priority rule:** lowest slot index wins (object 0 drawn “on top”). Document this explicitly in code — it is your z-order convention and must be consistent with how the team assigns slot numbers to objects.
 
 ---
 
@@ -238,7 +240,7 @@ Each object occupies 2 words (8 bytes). Base address of slot `i` = `i * 8`.
 
 **Total address space:** `N_OBJECTS * 8` bytes. For `N_OBJECTS = 8`, that's 64 bytes → 6-bit address decode.
 
-> ⚠️ **Status: draft, not final.** Confirm this layout before Phase 7 (AXI wrapping) — changing it afterward means re-generating the packaged IP. Record any changes in `docs/register_map.md` with the exact rationale and update all consumers.
+> ⚠️ **Status: draft, not final.** Confirm this layout before Phase 7 (AXI wrapping) — changing it afterward means re-generating the packaged IP. Record any changes in `docs/register_map.md` with the exact rationale and a dated note.
 
 ---
 
@@ -254,11 +256,11 @@ Each object occupies 2 words (8 bytes). Base address of slot `i` = `i * 8`.
   ```
 - Use `` `default_nettype none `` at the top of every file to catch typos in signal names.
 - Combinational logic: `always_comb`, never `always @(*)`.
-- Sequential logic: `always_ff @(posedge clk)`, with an explicit synchronous or asynchronous reset convention chosen once for the whole project and documented here (recommend: synchronous, active-low reset for most RTL).
+- Sequential logic: `always_ff @(posedge clk)`, with an explicit synchronous or asynchronous reset convention chosen once for the whole project and documented here (recommend: synchronous, active-low reset).
 - No inferred latches — every `always_comb` block must assign all outputs on every path.
 - Use `typedef struct packed` for object descriptor fields where it improves readability, but keep AXI-facing widths raw `logic [31:0]` to match the register map exactly.
 - Parameterize widths (`PIXEL_X_WIDTH`, `N_OBJECTS`, etc.) — never hardcode `10'd639` deep inside logic; derive from parameters.
-- One clock domain for the entire pixel pipeline (pixel clock). MicroBlaze/AXI side runs on system clock — cross this boundary only at the AXI wrapper, not inside `object_array`. Flag this explicitly in review if you see a cross-clock register inside the pixel path.
+- One clock domain for the entire pixel pipeline (pixel clock). MicroBlaze/AXI side runs on the system clock — cross this boundary only at the AXI wrapper, not inside `object_array`. Flag this explicitly when reviewing code or adding new signals.
 
 ---
 
@@ -266,7 +268,7 @@ Each object occupies 2 words (8 bytes). Base address of slot `i` = `i * 8`.
 
 Track progress here or in `docs/phase_log.md`. Each phase changes exactly one variable from the previous — if something breaks, you know which layer to look in.
 
-- [ ] **Phase 1 — Single hardcoded shape.** Write `primitive_object` with hardcoded rect parameters, wire directly into existing `vga_controller` output. No `object_array`, no compositor. Goal: prove geometry and pixel pipeline at the lowest level.
+- [ ] **Phase 1 — Single hardcoded shape.** Write `primitive_object` with hardcoded rect parameters, wire directly into the existing `vga_controller` output. No `object_array`, no compositor. Goal: prove geometry and pixel pipeline at the lowest level.
 - [ ] **Phase 2 — Add shape_type.** Extend `primitive_object` to support circle and triangle via `case(shape_type)`. Still one hardcoded instance.
 - [ ] **Phase 3 — Two hardcoded instances + manual mux.** Instantiate `primitive_object` twice, write compositor logic by hand (`if/else` chain) to prove overlap/priority handling.
 - [ ] **Phase 4 — Registers instead of hardcoded params.** Introduce `object_reg_slot`; drive it from a testbench (not AXI) to confirm objects can change position mid-simulation.
@@ -274,7 +276,7 @@ Track progress here or in `docs/phase_log.md`. Each phase changes exactly one va
 - [ ] **Phase 6 — Address decode (no AXI yet).** Add a plain `[addr, wdata, we]` bus driven from testbench, routed to the correct slot. Test thoroughly — off-by-one errors here are the most common failure mode.
 - [ ] **Phase 7 — AXI4-Lite wrapping.** Use Vivado's "Create and Package IP" wizard; drop Phase 6's decode logic into the generated slave template's user-logic section.
 - [ ] **Phase 8 — MicroBlaze integration.** Wire MicroBlaze + AXI interconnect + BRAM + clocking wizard in the Block Design GUI. Write a minimal C program that writes one register and confirms an object appears on screen.
-- [ ] **Phase 9 — Game logic on MicroBlaze.** Input handling, collision detection (using CPU-side mirror of object x/y/w/h — no pixel readback needed), scoring, game state machine.
+- [ ] **Phase 9 — Game logic on MicroBlaze.** Input handling, collision detection (using a CPU-side mirror of object x/y/w/h — no pixel readback needed), scoring, game state machine.
 - [ ] **Phase 10 — Polish.** Tune `N_OBJECTS`, timing closure on circle/triangle math at target `N`, finalize z-order convention, write user-facing game instructions.
 
 ---
@@ -294,7 +296,7 @@ Track progress here or in `docs/phase_log.md`. Each phase changes exactly one va
 - Board clock: 100 MHz (`W5` pin, per Basys 3 master XDC).
 - Pixel clock for 640×480@60Hz VGA: 25.175 MHz (25 MHz is an acceptable approximation) — generate via Clocking Wizard IP, not a manual counter, once MicroBlaze/AXI is in the design (keeps timing closure sane).
 - Use the standard Digilent Basys 3 master XDC as your base constraints file; uncomment VGA port pins (`JA`/dedicated VGA header — confirm against your specific `vga_controller`'s existing constraints file).
-- MicroBlaze + AXI interconnect + BRAM controller + clocking wizard: add via **Block Design GUI** (`Create Block Design` → `Add IP`), not hand-instantiated. Export the block design as Tcl (`File > Export > Export Block Design` or equivalent) for reproducibility.
+- MicroBlaze + AXI interconnect + BRAM controller + clocking wizard: add via **Block Design GUI** (`Create Block Design` → `Add IP`), not hand-instantiated. Export the block design as Tcl (`File > Export > Export Block Design` or the equivalent in your Vivado version).
 
 ---
 
@@ -311,12 +313,22 @@ Track progress here or in `docs/phase_log.md`. Each phase changes exactly one va
 
 | Term | Meaning |
 |---|---|
-| Slot | One object's index in the register file, 0 to N_OBJECTS-1 |
+| Slot | One object's index in the register file, 0 to `N_OBJECTS-1` |
 | Hit | Signal indicating the current scanned pixel belongs to a given object |
-| Compositor | Logic that resolves multiple simultaneous "hits" into one final pixel color |
+| Compositor | Logic that resolves multiple simultaneous “hits” into one final pixel color |
 | Z-order | The priority convention for which object wins when shapes overlap |
 | RGB444 | 12-bit color format, 4 bits each for red/green/blue |
 
 ---
 
 *Maintainers: update this document as the authoritative source whenever a phase changes an interface, address map, or convention. Treat drift between this file and the code as a bug.*
+
+---
+
+## Quick Start / Contributor Notes
+
+1. Review the phase tracker in Section 7 before starting work.
+2. Keep every module aligned with the conventions in Section 6.
+3. Verify the register map and slot layout before packaging the IP in Vivado.
+4. Test each standalone module with its own testbench in `sim/` before integrating it.
+5. Treat this README as the contract for interfaces, data formats, and workflow.
