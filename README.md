@@ -2,19 +2,28 @@
 
 Project status: **Advanced — Multi-object rendering with AXI4-Lite integration, text overlay, and MicroBlaze support.**
 
-**Target board:** Digilent Basys 3 (Xilinx Artix-7, XC7A35T)
-**Display:** VGA, 640×480 @ 60Hz
-**HDL:** SystemVerilog (RTL) + C (MicroBlaze application)
-**Toolchain:** Xilinx Vivado (Block Design + IP Packager)
-**Language Composition:** C (56.4%), SystemVerilog (36.7%), Verilog (6.9%)
+GitHub repository: https://github.com/OjewaleTimi/FPGAGameGPU  
+Repository ID: `1349405963`  
+Language composition: **C (58.5%)**, **SystemVerilog (34.9%)**, **Verilog (6.6%)**
+
+**Target board:** Digilent Basys 3 (Xilinx Artix-7, XC7A35T)  
+**Display:** VGA, 640×480 @ 60Hz  
+**HDL:** SystemVerilog (RTL) + C (MicroBlaze application)  
+**Toolchain:** Xilinx Vivado (Block Design + IP Packager)  
 
 ---
 
-<img width="1573" height="707" alt="FPGA VGA Sprite Engine block diagram" src="https://github.com/user-attachments/assets/1f1b8631-baa7-4e4b-9a7f-d28e6635659e" />
+## Full Implementation Preview
+
+This image shows the complete FPGA VGA sprite engine architecture, including the MicroBlaze-controlled register interface, sprite generation pipeline, compositor, text overlay, and final VGA output path.
+
+<img width="1573" height="707" alt="FPGA VGA Sprite Engine full implementation overview" src="https://github.com/user-attachments/assets/1f1b8631-baa7-4e4b-9a7f-d28e6635659e" />
+
+---
 
 ## 1. Project Overview
 
-This project implements a hardware-accelerated 2D sprite/object rendering engine on an FPGA, controllable at runtime by a soft-core CPU (MicroBlaze). Instead of a CPU writing a full framebuffer every cycle, objects are stored in registers and evaluated in parallel every pixel clock via a parameterized generate loop. A compositor then resolves overlaps based on priority (z-order).
+This project implements a hardware-accelerated 2D sprite/object rendering engine on an FPGA, controllable at runtime by a soft-core CPU (MicroBlaze). Instead of a CPU writing a full framebuffer every frame, the MicroBlaze only updates object descriptors, while dedicated hardware logic evaluates sprite hits and composites pixels in parallel. The result is a scalable, low-latency, real-time graphics pipeline suitable for arcade-style game rendering.
 
 This is the same architectural idea used in classic sprite-based arcade and console hardware: software decides what should be on screen; hardware decides how it gets drawn every 25 MHz pixel clock.
 
@@ -76,7 +85,7 @@ repo-root/
 │   ├── register_system.sv                     <- per-slot register file (x, y, w, h, color, shape, enable)
 │   ├── object_array.sv                        <- N-instance generate loop, address decode
 │   ├── compositor.sv                          <- priority mux over active objects
-│   ├── text_overlay.sv                        <- 80x30 text grid with BRAM font ROM (1-cycle latency)
+│   ├── text_overlay.sv                       <- 80x30 text grid with BRAM font ROM (1-cycle latency)
 │   ├── font_rom.sv                            <- BRAM-backed character font (initialized from font.coe)
 │   ├── vga_top.sv                             <- top-level wire harness, text+shape layering, pipeline alignment
 │   ├── teenytinygpu.v                         <- AXI4-Lite IP top wrapper (Vivado-generated)
@@ -455,4 +464,3 @@ GPU_TextClear();
 ---
 
 *Maintainers: update this document whenever a phase changes an interface, register map, or convention. Treat drift between this file and the code as a bug.*
-
