@@ -1,18 +1,5 @@
 # FPGA VGA Sprite Engine — Project Documentation
 
-Project status: **Advanced — Multi-object rendering with AXI4-Lite integration, text overlay, and MicroBlaze support.**
-
-GitHub repository: https://github.com/OjewaleTimi/FPGAGameGPU  
-Repository ID: `1349405963`  
-Language composition: **C (58.5%)**, **SystemVerilog (34.9%)**, **Verilog (6.6%)**
-
-**Target board:** Digilent Basys 3 (Xilinx Artix-7, XC7A35T)  
-**Display:** VGA, 640×480 @ 60Hz  
-**HDL:** SystemVerilog (RTL) + C (MicroBlaze application)  
-**Toolchain:** Xilinx Vivado (Block Design + IP Packager)  
-
----
-
 ## Full Implementation Preview
 
 This image shows the complete FPGA VGA sprite engine architecture, including the MicroBlaze-controlled register interface, sprite generation pipeline, compositor, text overlay, and final VGA output path.
@@ -20,6 +7,11 @@ This image shows the complete FPGA VGA sprite engine architecture, including the
 <img width="1573" height="707" alt="FPGA VGA Sprite Engine full implementation overview" src="https://github.com/user-attachments/assets/1f1b8631-baa7-4e4b-9a7f-d28e6635659e" />
 
 ---
+
+<img width="1280" height="960" alt="image" src="https://github.com/user-attachments/assets/d6905993-beb7-4716-924e-f34cfa5c7785" />
+
+here is an image of the entire setup with the pacman game
+
 
 ## 1. Project Overview
 
