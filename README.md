@@ -4,10 +4,6 @@ A hardware-accelerated 2D sprite rendering engine built for the Digilent Basys 3
 
 Project status: Advanced — multi-object rendering, AXI4-Lite integration, text overlay, and MicroBlaze support are in place.
 
-GitHub repository: https://github.com/OjewaleTimi/FPGAGameGPU
-Repository ID: `1349405963`
-Language composition: C (58.5%), SystemVerilog (34.9%), Verilog (6.6%)
-
 Target board: Digilent Basys 3 (Xilinx Artix-7, XC7A35T)
 Display: VGA, 640×480 @ 60Hz
 HDL: SystemVerilog (RTL) + C (MicroBlaze application)
