@@ -8,7 +8,6 @@ module compositor #(
 );
 
        int j;
-    //priority mux for the objects above to appear on screen
     always_comb begin
         final_color = background_color;
      for(j = 0; j < NUM_OBJECTS; j = j + 1)  begin
