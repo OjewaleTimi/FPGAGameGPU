@@ -1,5 +1,20 @@
 # FPGA VGA Sprite Engine — Project Documentation
 
+A hardware-accelerated 2D sprite rendering engine built for the Digilent Basys 3 board. The project combines a MicroBlaze soft processor, a custom AXI4-Lite GPU peripheral, and a VGA output pipeline to render sprite objects, layered text, and game-state visuals in real time.
+
+Project status: Advanced — multi-object rendering, AXI4-Lite integration, text overlay, and MicroBlaze support are in place.
+
+GitHub repository: https://github.com/OjewaleTimi/FPGAGameGPU
+Repository ID: `1349405963`
+Language composition: C (58.5%), SystemVerilog (34.9%), Verilog (6.6%)
+
+Target board: Digilent Basys 3 (Xilinx Artix-7, XC7A35T)
+Display: VGA, 640×480 @ 60Hz
+HDL: SystemVerilog (RTL) + C (MicroBlaze application)
+Toolchain: Xilinx Vivado (block design + IP packaging)
+
+---
+
 ## Full Implementation Preview
 
 This image shows the complete FPGA VGA sprite engine architecture, including the MicroBlaze-controlled register interface, sprite generation pipeline, compositor, text overlay, and final VGA output path.
@@ -8,25 +23,27 @@ This image shows the complete FPGA VGA sprite engine architecture, including the
 
 ---
 
-<img width="1280" height="960" alt="image" src="https://github.com/user-attachments/assets/d6905993-beb7-4716-924e-f34cfa5c7785" />
+<img width="1280" height="960" alt="Entire FPGA gaming setup with Pacman" src="https://github.com/user-attachments/assets/d6905993-beb7-4716-924e-f34cfa5c7785" />
 
-here is an image of the entire setup with the pacman game
+This image shows the full board setup with the Pacman-style game running on the Basys 3 hardware.
 
+---
 
 ## 1. Project Overview
 
-This project implements a hardware-accelerated 2D sprite/object rendering engine on an FPGA, controllable at runtime by a soft-core CPU (MicroBlaze). Instead of a CPU writing a full framebuffer every frame, the MicroBlaze only updates object descriptors, while dedicated hardware logic evaluates sprite hits and composites pixels in parallel. The result is a scalable, low-latency, real-time graphics pipeline suitable for arcade-style game rendering.
+This project implements a hardware-accelerated 2D sprite and object rendering engine on an FPGA, controlled at runtime by a MicroBlaze soft-core processor. Instead of writing a full framebuffer from software for every frame, the CPU writes a compact set of object descriptors to a custom GPU register space. The FPGA hardware evaluates sprite visibility and pixel color for every screen position at video timing rates.
 
-This is the same architectural idea used in classic sprite-based arcade and console hardware: software decides what should be on screen; hardware decides how it gets drawn every 25 MHz pixel clock.
+This follows the same core idea used in classic sprite-based arcade machines and early console graphics systems: software decides what should be visible, while hardware determines how those objects are drawn efficiently every pixel clock.
 
 ### 1.1 Why this architecture
 
 | Concern | How this design solves it |
 |---|---|
-| Frame rate stability | VGA controller scans at a fixed, independent rate. CPU speed cannot cause stutter; it can only cause stale positions. |
-| CPU workload | Only a few bytes are written per object per game-logic tick, not a full framebuffer. |
-| Scaling object count | Costs FPGA fabric (LUTs/FFs) via a generate loop, not CPU cycles — all objects are evaluated in parallel every pixel. |
-| Reusability | Shape evaluation logic (`object_generator`) is written once and instantiated N times via `object_array`. |
+| Frame rate stability | The VGA controller scans at a fixed timing independent of CPU speed. |
+| CPU workload | Software writes only a few registers per object instead of a full framebuffer each frame. |
+| Scaling object count | Object generation is implemented in hardware and replicated via a generate loop. |
+| Reusability | One `object_generator` is reused across many sprite slots through `object_array`. |
+| Deterministic output | The compositor resolves overlaps with a fixed priority rule and predictable z-order. |
 
 ### 1.2 High-level data flow
 
@@ -49,13 +66,13 @@ This is the same architectural idea used in classic sprite-based arcade and cons
 [compositor]  <-- resolves overlaps, z-order priority (lower slot wins)
         |
         v
-[text_overlay]  <-- 80x30 character grid, BRAM-backed font ROM, 1-cycle latency
+[text_overlay]  <-- 80x30 character grid, BRAM-backed font ROM
         |
         v
-[vga_top]  <-- multiplexes text (top) with shapes/background, adjusts pipeline delays
+[vga_top]  <-- multiplexes text over shapes/background and aligns pipeline delays
         |
         v
-[vga_controller]  (unchanged from original) --> hsync, vsync, pixel_x, pixel_y
+[vga_controller]  <-- generates sync timing and pixel coordinates
         |
         v
    Physical VGA port (RGB + sync)
@@ -67,346 +84,278 @@ This is the same architectural idea used in classic sprite-based arcade and cons
 
 ```text
 repo-root/
-├── README.md                                  <- this file
+├── README.md                                  <- project documentation
 ├── docs/
-│   ├── register_map.md                        <- (planned) authoritative AXI address map
-│   └── phase_log.md                           <- (planned) running log of completed phases
+│   ├── register_map.md                        <- authoritative AXI address map (planned)
+│   └── phase_log.md                           <- development log (planned)
 ├── RTL/
-│   ├── vga_controller.sv                      <- existing VGA timing (640×480@60Hz)
+│   ├── vga_controller.sv                      <- VGA timing generator (640×480@60Hz)
 │   ├── object_generator.sv                    <- combinational hit/color logic for one object
 │   ├── register_system.sv                     <- per-slot register file (x, y, w, h, color, shape, enable)
-│   ├── object_array.sv                        <- N-instance generate loop, address decode
-│   ├── compositor.sv                          <- priority mux over active objects
-│   ├── text_overlay.sv                       <- 80x30 text grid with BRAM font ROM (1-cycle latency)
-│   ├── font_rom.sv                            <- BRAM-backed character font (initialized from font.coe)
-│   ├── vga_top.sv                             <- top-level wire harness, text+shape layering, pipeline alignment
-│   ├── teenytinygpu.v                         <- AXI4-Lite IP top wrapper (Vivado-generated)
+│   ├── object_array.sv                        <- N-instance generate loop and address decode
+│   ├── compositor.sv                          <- priority mux for overlap resolution
+│   ├── text_overlay.sv                       <- 80×30 text grid with BRAM font ROM
+│   ├── font_rom.sv                           <- BRAM-backed character font store
+│   ├── vga_top.sv                            <- top-level wiring, layering, and timing alignment
+│   ├── teenytinygpu.v                        <- AXI4-Lite IP top wrapper (Vivado-generated)
 │   ├── teenytinygpu_slave_lite_v1_0_S00_AXI.v <- AXI4-Lite slave interface (Vivado-generated)
-│   ├── font.coe                               <- character bitmap data (8×16 pixels per char)
-│   ├── comp_tb.sv                             <- standalone compositor testbench
-│   ├── reg_tb.sv                              <- register_system testbench
-│   ├── object_array_tb.sv                     <- object_array address decode testbench
-│   └── tb_vga_top.sv                          <- full-frame integration testbench with VCD output
+│   ├── font.coe                              <- character bitmap data (8×16 pixels per char)
+│   ├── comp_tb.sv                            <- compositor testbench
+│   ├── reg_tb.sv                             <- register_system testbench
+│   ├── object_array_tb.sv                    <- object_array address decode testbench
+│   └── tb_vga_top.sv                         <- full-frame integration testbench with VCD output
 ├── TB/
-│   ├── tb_compositor.sv                       <- comprehensive compositor tests
-│   ├── tb_vga_top.sv                          <- integration testbench (duplicate, in TB/ for sim organization)
-│   ├── object_array_tb.sv                     <- object array tests
-│   └── reg_tb.sv                              <- register system tests
+│   ├── tb_compositor.sv                      <- comprehensive compositor tests
+│   ├── tb_vga_top.sv                         <- integration testbench for sim organization
+│   ├── object_array_tb.sv                    <- object array validation
+│   └── reg_tb.sv                            <- register system validation
 ├── sw/
-│   ├── main.c                                 <- MicroBlaze application (game logic, collision detection, scoring)
-│   └── vga_gpu.h                              <- driver header with GPU_* macros and helper functions
+│   ├── main.c                                <- MicroBlaze application with game logic
+│   └── vga_gpu.h                             <- GPU driver API and helper macros
 ├── sim/
-│   └── (simulation script or Makefile)        <- (optional) automation for running testbenches
+│   └── (simulation scripts / Makefiles)      <- optional automation
 ├── constraints/
-│   └── (Basys 3 XDC)                          <- (to be added) pin constraints for Basys 3 board
+│   └── (Basys 3 XDC)                         <- board pin constraints
 ├── vivado/
-│   └── block_design/                          <- (to be added) exported .bd / .tcl for reproducible builds
+│   └── block_design/                         <- exported block design / TCL files
 ├── VCD_FILE/
 │   └── (waveform dumps from simulations)
-└── build/
-    └── (Vivado build artifacts, not committed)
+├── build/
+│   └── (Vivado build artifacts, not committed)
+└── README.md
 ```
 
-**Rule:** one module per file, filename generally matches module name (except Vivado-generated files).
+Rule: one module per file; the filename generally matches the module name, with the exception of Vivado-generated files.
 
 ---
 
 ## 3. Module Inventory & Status
 
-| Module | Hand-written? | Status | Lines | Purpose |
-|---|---|---|---|---|
-| `vga_controller` | Yes (original) | ✅ **Done** | ~100 | Generates 640×480@60Hz timing, pixel clock |
-| `object_generator` | Yes | ✅ **Done** | ~50 | Combinational hit/color logic for one object shape |
-| `register_system` | Yes | ✅ **Done** | ~50 | Per-slot register file, write decode, unpacks fields |
-| `object_array` | Yes | ✅ **Done** | ~60 | Generate loop over N slots, address decode |
-| `compositor` | Yes | ✅ **Done** | ~20 | Priority mux, resolves overlapping objects |
-| `text_overlay` | Yes | ✅ **Done** | ~150 | 80×30 character grid, text rendering |
-| `font_rom` | Yes | ✅ **Done** | ~50 | BRAM-backed 8×16 font storage |
-| `vga_top` | Yes | ✅ **Done** | ~120 | Top-level wiring, layer muxing, pipeline alignment |
-| `teenytinygpu.v` | Vivado-generated | ✅ **Done** | ~40 | AXI IP wrapper shell |
-| `teenytinygpu_slave_lite_v1_0_S00_AXI.v` | Vivado-generated | ✅ **Done** | ~200 | AXI4-Lite slave interface logic |
-| `main.c` (MicroBlaze app) | Yes | ✅ **Done** | ~2000+ | Full game loop, input, collision, scoring |
-| `vga_gpu.h` (driver) | Yes | ✅ **Done** | ~150 | Convenience macros and helper functions |
+| Module | Hand-written? | Status | Purpose |
+|---|---|---|---|
+| `vga_controller` | Yes (original) | ✅ Done | Generates 640×480@60Hz timing and pixel clock |
+| `object_generator` | Yes | ✅ Done | Combinational hit/color logic for one sprite object |
+| `register_system` | Yes | ✅ Done | Per-slot register file for object parameters |
+| `object_array` | Yes | ✅ Done | Generate loop over object slots and address decode |
+| `compositor` | Yes | ✅ Done | Resolves overlap priority and chooses final color |
+| `text_overlay` | Yes | ✅ Done | Renders an 80×30 character grid with font ROM |
+| `font_rom` | Yes | ✅ Done | BRAM-backed 8×16 font storage |
+| `vga_top` | Yes | ✅ Done | Top-level wiring, layer muxing, and timing alignment |
+| `teenytinygpu.v` | Vivado-generated | ✅ Done | AXI IP wrapper shell |
+| `teenytinygpu_slave_lite_v1_0_S00_AXI.v` | Vivado-generated | ✅ Done | AXI4-Lite slave interface logic |
+| `main.c` | Yes | ✅ Done | Game loop, input handling, collision detection, scoring |
+| `vga_gpu.h` | Yes | ✅ Done | Convenience macros and software driver API |
 
-**Key Achievements:**
-- ✅ All core RTL modules complete and simulated
-- ✅ AXI4-Lite integration complete
-- ✅ Text overlay with BRAM-backed font
-- ✅ Multi-object (default 25 objects) parallel rendering
-- ✅ Priority-based compositor (lower slot index = higher z-order)
-- ✅ MicroBlaze driver layer complete
-- ✅ Full game implementation in C with collision detection
+### Key achievements
+
+- ✅ All core RTL modules implemented and simulated
+- ✅ AXI4-Lite integration completed
+- ✅ Text overlay with BRAM-backed font ROM implemented
+- ✅ Multi-object rendering with a default of 25 sprite slots
+- ✅ Priority-based compositor for deterministic z-order behavior
+- ✅ MicroBlaze driver layer completed
+- ✅ Full game logic with collision detection and score updates implemented
 
 ---
 
-## 4. Module Specifications
+## 4. Hardware and Software Interaction
 
-### 4.1 `object_generator`
+The design is intentionally split into hardware and software responsibilities:
 
-**Purpose:** Given the current scan position and one object's parameters, determine whether the current pixel belongs to this object and what color it should be.
+1. The MicroBlaze CPU decides what objects should appear and updates their descriptors.
+2. The AXI4-Lite peripheral receives software writes and stores the object metadata.
+3. The FPGA renderer checks each object against the current pixel coordinates.
+4. The compositor resolves overlaps using a fixed priority rule.
+5. The text overlay draws characters over the final scene.
+6. The VGA controller outputs the resulting pixels to the display.
 
-**Parameters:**
+This separation allows the CPU to focus on gameplay logic, while the FPGA handles the pixel-by-pixel rendering path at fixed video timing.
+
+---
+
+## 5. Module Specifications
+
+### 5.1 `object_generator`
+
+Purpose: determine whether the current pixel belongs to a given sprite and what color it should output.
+
+Parameters:
 
 | Name | Default | Description |
 |---|---|---|
 | (none — all widths inferred from port widths) | — | — |
 
-**Ports:**
+Ports:
 
 | Name | Dir | Width | Description |
-|---|---|---|---|
-| `clk` | in | 1 | pixel clock (100 MHz) |
-| `pixel_x`, `pixel_y` | in | 10, 10 | current scan column/row |
-| `x`, `y` | in | 10, 10 | object origin |
-| `w`, `h` | in | 10, 10 | width/height (or radius for circle) |
-| `shape_type` | in | 2 | `00`=rect, `01`=circle, (others reserved) |
-| `enable` | in | 1 | object active flag |
-| `rgb_color` | in | 12 | input color (RGB444) |
-| `video_on` | out | 1 | 1 if current pixel belongs to this object |
-| `pixel_color` | out | 12 | valid only when `video_on` is high |
+|---|---|---:|---|
+| `clk` | in | 1 | Pixel clock |
+| `pixel_x`, `pixel_y` | in | 10, 10 | Current scan column and row |
+| `x`, `y` | in | 10, 10 | Object origin |
+| `w`, `h` | in | 10, 10 | Width/height or radius |
+| `shape_type` | in | 2 | `00` = rectangle, `01` = circle |
+| `enable` | in | 1 | Object active flag |
+| `rgb_color` | in | 12 | RGB444 color input |
+| `video_on` | out | 1 | Pixel belongs to this object |
+| `pixel_color` | out | 12 | Color output for this pixel |
 
-**Behavior (combinational, `always_comb`):**
-- `enable == 0` → `video_on = 0` unconditionally.
-- `shape_type == 2'b00` (rect): `video_on = (pixel_x >= x) && (pixel_x < x + w) && (pixel_y >= y) && (pixel_y < y + h)`
-- `shape_type == 2'b01` (circle): center = `(x, y)`, radius = `w`. `video_on = ((dx*dx + dy*dy) <= (w*w))` where `dx = pixel_x - x`, `dy = pixel_y - y`.
+Behavior:
 
-**Design note:** Purely combinational, re-evaluated every pixel clock as a pure function of inputs.
+- If `enable == 0`, the object is inactive and never contributes pixels.
+- Rectangle mode checks whether the pixel is within the object bounds.
+- Circle mode tests whether the pixel lies within the circle radius.
+- The logic is fully combinational and reevaluated every pixel clock.
 
----
+### 5.2 `register_system`
 
-### 4.2 `register_system`
+Purpose: store a single object's descriptor fields, including position, dimensions, color, shape, and enable state.
 
-**Purpose:** Storage for one object's descriptor fields (x, y, w, h, color, shape, enable). Holds flip-flops written by address-decode logic in `object_array`.
-
-**Ports:**
+Ports:
 
 | Name | Dir | Description |
 |---|---|---|
-| `clk`, `reset` | in | standard |
-| `write_enable` | in | write strobe (asserted only when this slot is addressed) |
-| `addr` | in | local offset within this slot (4 bits) |
+| `clk`, `reset` | in | Standard clock and reset |
+| `write_enable` | in | Asserted only when the slot is addressed |
+| `addr` | in | Local register offset within the slot |
 | `write_data` | in | 32-bit write data |
-| `x, y, w, h, color, shape_type, enable` | out | unpacked fields for `object_generator` |
+| `x, y, w, h, color, shape_type, enable` | out | Unpacked fields for `object_generator` |
 
-**Layout (from vga_gpu.h):**
-- **Offset 0x00 (X):** `write_data[9:0]` → x coordinate
-- **Offset 0x04 (Y):** `write_data[9:0]` → y coordinate
-- **Offset 0x08 (DIM):** `write_data[25:16]` → w, `write_data[9:0]` → h
-- **Offset 0x0C (CFG):** `write_data[14:13]` → shape_type, `write_data[12]` → enable, `write_data[11:0]` → color (RGB444)
+Register layout (matching `vga_gpu.h`):
 
-No combinational logic beyond field unpacking.
+- Offset `0x00 (X)`: `write_data[9:0]` → x coordinate
+- Offset `0x04 (Y)`: `write_data[9:0]` → y coordinate
+- Offset `0x08 (DIM)`: `write_data[25:16]` → w, `write_data[9:0]` → h
+- Offset `0x0C (CFG)`: `write_data[14:13]` → shape, `write_data[12]` → enable, `write_data[11:0]` → color (RGB444)
 
----
+No combinational logic beyond field unpacking is required.
 
-### 4.3 `object_array`
+### 5.3 `object_array`
 
-**Purpose:** Instantiate N × (`register_system` + `object_generator`) via `generate`, and decode an AXI address into per-slot writes.
+Purpose: instantiate N copies of `register_system + object_generator` and decode the write address into the correct slot.
 
-**Parameters:**
+Parameters:
 
 | Name | Default | Description |
 |---|---|---|
-| `NUM_OBJECTS` | 25 | number of sprite slots |
+| `NUM_OBJECTS` | 25 | Number of sprite slots |
 
-**Ports:**
+Ports:
 
 | Name | Dir | Description |
 |---|---|---|
-| `clk`, `reset` | in | standard |
-| `addr` | in | 16-bit address (upper bits = slot index, lower 4 bits = register offset within slot) |
+| `clk`, `reset` | in | Standard clock and reset |
+| `addr` | in | 16-bit address; upper bits select the slot |
 | `write_data` | in | 32-bit write data |
-| `write_enable` | in | write strobe |
-| `pixel_x`, `pixel_y` | in | from VGA controller |
-| `active[NUM_OBJECTS-1:0]` | out | one "hit" bit per object, to compositor |
-| `pixel_color[NUM_OBJECTS-1:0]` | out | one color bus per object, to compositor |
+| `write_enable` | in | Write strobe |
+| `pixel_x`, `pixel_y` | in | Current VGA pixel coordinates |
+| `active[NUM_OBJECTS-1:0]` | out | One hit bit per object |
+| `pixel_color[NUM_OBJECTS-1:0]` | out | One color bus per object |
 
-**Address decode logic:**
+Address decode logic:
+
 - `slot_index = addr[15:4]`
 - `reg_offset = addr[3:0]`
-- Route `write_enable` to the selected slot's write strobe only.
+- `write_enable` is routed only to the selected object slot
 
----
+### 5.4 `compositor`
 
-### 4.4 `compositor`
+Purpose: resolve overlapping sprites into a single final color for each pixel.
 
-**Purpose:** Resolve overlapping objects into a single RGB output per pixel.
-
-**Ports:**
+Ports:
 
 | Name | Dir | Description |
 |---|---|---|
-| `active[NUM_OBJECTS-1:0]` | in | from `object_array` |
-| `pixel_color[NUM_OBJECTS-1:0]` | in | from `object_array` |
-| `background_color` | in | background RGB444 |
-| `final_color` | out | final RGB444 for this pixel |
+| `active[NUM_OBJECTS-1:0]` | in | Hit vector from `object_array` |
+| `pixel_color[NUM_OBJECTS-1:0]` | in | Per-object pixel color |
+| `background_color` | in | Background RGB444 color |
+| `final_color` | out | Final pixel color |
 
-**Priority rule:** Scans from `j = 0` to `NUM_OBJECTS-1`. First active object wins (lower slot index = top priority, highest z-order).
+Priority rule:
 
----
+- Scan from slot 0 to `NUM_OBJECTS-1`
+- The first active object wins
+- Lower slot index therefore has higher z-order priority
 
-### 4.5 `text_overlay`
+### 5.5 `text_overlay`
 
-**Purpose:** Render an 80×30 grid of 8×16 character cells using a BRAM-backed font ROM.
+Purpose: render an 80×30 grid of text using a BRAM-backed font ROM.
 
-**Ports:**
+Ports:
 
 | Name | Dir | Description |
 |---|---|---|
-| `clk`, `reset` | in | standard |
-| `pixel_x`, `pixel_y` | in | current pixel position |
-| `addr` | in | AXI write address (distinguishes text writes via bit 15) |
-| `write_data` | in | AXI write data (packed as ASCII + RGB12) |
+| `clk`, `reset` | in | Standard signals |
+| `pixel_x`, `pixel_y` | in | Current pixel position |
+| `addr` | in | AXI write address for text writes |
+| `write_data` | in | Packed ASCII + RGB12 data |
 | `write_enable` | in | AXI write strobe |
-| `text_active` | out | 1 if this pixel is covered by rendered text |
-| `text_color` | out | RGB12 color of text at this pixel |
+| `text_active` | out | Indicates whether the pixel is covered by text |
+| `text_color` | out | RGB12 color of the text pixel |
 
-**Behavior:**
-- Text writes target addresses with bit 15 set (base offset 0x8000).
-- Each character cell stores 32 bits: `[31:8] = RGB12`, `[7:0] = ASCII`.
-- Font ROM (`font_rom.sv`) has 1 cycle of read latency (real BRAM). `text_overlay` accounts for this internally.
-- See `vga_top.sv` for 1-cycle pipeline alignment to keep text synchronized with shapes.
+Behavior:
+
+- Text writes target addresses with bit 15 set (base offset `0x8000`)
+- Each character cell stores 32 bits: `[31:8] = RGB12`, `[7:0] = ASCII`
+- The font ROM has one cycle of read latency, and `text_overlay` compensates for it internally
+- `vga_top` aligns the text path so it remains synchronized with sprite rendering
+
+### 5.6 `vga_top`
+
+Purpose: connect and align the compositor, text overlay, and VGA controller into a single screen pipeline.
+
+Key logic:
+
+- Delays the compositor output and synchronization signals to match the text overlay latency
+- Draws text on top of shapes and background
+- Suppresses colors during blanking periods
+- Feeds the final RGB value to the VGA controller
 
 ---
 
-### 4.6 `vga_top`
+## 6. AXI4-Lite Register Map
 
-**Purpose:** Top-level module that wires compositor, text overlay, and VGA controller outputs; multiplexes layers and manages pipeline delays.
+The custom GPU peripheral is generated through Vivado IP Packager. The base address is typically `0x44A00000U`, but it may vary depending on the final block design.
 
-**Key logic:**
-- Delays compositor output and VGA sync signals by 1 clock to align with `text_overlay`'s BRAM latency.
-- Text draws on top of shapes/background (highest layer).
-- `video_on` suppresses all colors during blanking intervals.
+### Object registers
 
----
-
-## 5. AXI4-Lite Register Map
-
-Generated via Vivado's IP Packager. Base address typically `0x44A00000U` (configurable via Vivado).
-
-### Object Registers (via `register_system`)
-
-Each object occupies 4 words (16 bytes). Base address of slot `i` = `i * 16` (within GPU address space).
+Each object occupies 16 bytes in the GPU address space.
 
 | Offset | Field | Bits | Description |
 |---|---|---|---|
-| +0x0 | X | [9:0] | object x-origin, 0–639 |
-| +0x4 | Y | [9:0] | object y-origin, 0–479 |
-| +0x8 | DIM | [25:16]=w, [9:0]=h | width/height (radius for circle) |
-| +0xC | CFG | [14:13]=shape, [12]=enable, [11:0]=color | configuration and RGB444 |
+| `+0x00` | X | `[9:0]` | object x-origin |
+| `+0x04` | Y | `[9:0]` | object y-origin |
+| `+0x08` | DIM | `[25:16] = w`, `[9:0] = h` | width and height |
+| `+0x0C` | CFG | `[14:13] = shape`, `[12] = enable`, `[11:0] = color` | configuration and RGB444 color |
 
-### Background Color Register
+### Background color register
 
 | Offset | Field | Description |
 |---|---|---|
-| +0xFF0 | BG_COLOR | RGB444 background color |
+| `+0xFF0` | `BG_COLOR` | RGB444 background color |
 
-### Text Overlay Registers
+### Text overlay registers
 
-Text writes target offset `0x8000 + (row * 80 + col) * 4` within GPU address space.
+Text writes target an address range beginning at `0x8000`.
 
 | Offset | Field | Bits | Description |
 |---|---|---|---|
-| +0x8000+ | TEXT_CELL | [31:8]=RGB12, [7:0]=ASCII | character and color |
+| `+0x8000 + (row * 80 + col) * 4` | `TEXT_CELL` | `[31:8] = RGB12`, `[7:0] = ASCII` | character and text color |
 
-See `vga_gpu.h` for convenience macros (`GPU_TextPutChar`, `GPU_TextPutString`, etc.).
-
----
-
-## 6. Coding Conventions (SystemVerilog)
-
-- **File header** (top of every `.sv` file):
-  ```systemverilog
-  // ============================================================
-  // Module: <module_name>
-  // Purpose: <one line>
-  // ============================================================
-  ```
-- Use `` `default_nettype none `` at the top of every file to catch typos in signal names.
-- Combinational logic: `always_comb`, never `always @(*)`.
-- Sequential logic: `always_ff @(posedge clk)`, with synchronous active-low reset (`reset`) convention.
-- No inferred latches — every `always_comb` block must assign all outputs on every path.
-- Parameterize widths — never hardcode values like `10'd639`; derive from parameters or explicit bit widths.
-- One clock domain for the entire pixel pipeline (100 MHz input, 25 MHz effective pixel clock via VGA controller). MicroBlaze/AXI runs on the system clock.
+See `sw/vga_gpu.h` for helper macros such as `GPU_TextPutChar`, `GPU_TextPutString`, and related convenience functions.
 
 ---
 
-## 7. Build Phases — Current Status
-
-| Phase | Description | Status |
-|---|---|---|
-| **1** | Single hardcoded rectangle + testbench | ✅ **Done** |
-| **2** | Add circle shape support | ✅ **Done** |
-| **3** | Two hardcoded instances + manual mux | ✅ **Done** |
-| **4** | Registers instead of hardcoded params | ✅ **Done** |
-| **5** | Generalize to N via generate loop | ✅ **Done** (default N=25) |
-| **6** | Address decode (pre-AXI bus) | ✅ **Done** |
-| **7** | AXI4-Lite wrapping (Vivado IP) | ✅ **Done** (`teenytinygpu` IP generated) |
-| **8** | MicroBlaze + interconnect + Block Design | ✅ **Done** |
-| **9** | Game logic on MicroBlaze | ✅ **Done** (collision, scoring, input handling in main.c) |
-| **10** | Text overlay with BRAM font | ✅ **Done** |
-| **11** | Polish & optimization | ✅ **In Progress** |
-
-**Completed milestones:**
-- ✅ All RTL modules tested in simulation
-- ✅ AXI4-Lite IP packaged and integrated
-- ✅ MicroBlaze application with full game logic
-- ✅ Text rendering system with font ROM
-- ✅ Multiple test benches validating each layer
-
----
-
-## 8. Simulation Strategy
-
-Every hand-written module has a corresponding testbench in `TB/`:
-
-- **`tb_compositor.sv`:** Validates priority mux behavior over 2–25 active objects; checks z-order.
-- **`reg_tb.sv`:** Drives the register interface; confirms field unpacking.
-- **`object_array_tb.sv`:** Tests address decode across all slots and word offsets.
-- **`tb_vga_top.sv`:** Full-frame integration test with multiple objects; generates `.vcd` waveform for GTKWave inspection.
-
-**Hardware bring-up order:**
-1. Simulate phases 1–6 thoroughly (all testbenches pass).
-2. Generate the AXI IP in Vivado (Phase 7).
-3. Instantiate MicroBlaze, interconnect, BRAM, clocking wizard in Block Design (Phase 8).
-4. Load compiled `.elf` onto the board and verify simple register writes (e.g., move one sprite).
-
-If nothing appears on real hardware after Phase 8, common causes:
-- AXI/interconnect address mismatch (verify in Vivado).
-- Clock domain crossing issues (check clock wizard output rates).
-- Pin assignment error (verify in `.xdc` file against board documentation).
-
----
-
-## 9. Vivado Build Notes (Basys 3 specific)
-
-- **Board clock:** 100 MHz (`W5` pin, per Basys 3 master XDC).
-- **Pixel clock:** 25 MHz (generated via Clocking Wizard) for 640×480@60Hz VGA.
-- **Block Design:** Contains MicroBlaze, AXI interconnect, BRAM controller, and `teenytinygpu` IP. Export as Tcl for reproducibility.
-- **Constraints:** Use the standard Digilent Basys 3 master `.xdc` as base; enable VGA port pins (JA header) and confirm against your board revision.
-- **IP Integration:** The `teenytinygpu` IP is pre-packaged in `RTL/`. Register it in Vivado via **IP Catalog → Add Repositories** if not already visible.
-
----
-
-## 10. Git Workflow
-
-- **Branch per feature:** e.g., `feat/text-overlay`, `fix/compositor-priority`.
-- **No direct commits to `main`** — PR + team review required.
-- **Update Section 3 (Module Inventory) and Section 7 (Build Phases)** as part of each PR that completes work.
-- **Commit Vivado files:** `.bd` (exported), `.tcl`, `.xci` (IP). **Do not commit:** `.runs/`, `.cache/`, `.sim/`, build artifacts.
-
----
-
-## 11. Driver API Reference (vga_gpu.h)
+## 7. Driver API Reference (`vga_gpu.h`)
 
 ```c
 // Set background color
-GPU_SetBackgroundColor(r, g, b);  // r, g, b are 4-bit values (0–15)
+GPU_SetBackgroundColor(r, g, b);  // r, g, b are 4-bit values (0..15)
 
 // Position a sprite
-GPU_SetPosition(slot, x, y);      // slot: 0–24, x: 0–639, y: 0–479
+GPU_SetPosition(slot, x, y);      // slot: 0..24, x: 0..639, y: 0..479
 
 // Size a sprite
-GPU_SetDimensions(slot, w, h);    // w, h: 0–1023
+GPU_SetDimensions(slot, w, h);    // w, h: 0..1023
 
 // Configure shape + enable + color
 GPU_ConfigureConfig(slot, shape, enable, rgb12);
@@ -416,43 +365,154 @@ GPU_ConfigureConfig(slot, shape, enable, rgb12);
 GPU_ConfigureObject(slot, x, y, w, h, shape, r, g, b, enable);
 
 // Text overlay
-GPU_TextPutChar(row, col, 'A', rgb12);        // row: 0–29, col: 0–79
+GPU_TextPutChar(row, col, 'A', rgb12);    // row: 0..29, col: 0..79
 GPU_TextPutString(row, col, "Hello", rgb12);
 GPU_TextClear();
 ```
 
----
+Example:
 
-## 12. Glossary
-
-| Term | Meaning |
-|---|---|
-| Slot | One object's index in the register file, 0 to 24 (default) |
-| Hit / Active | Signal indicating the current scanned pixel belongs to a given object |
-| Compositor | Logic that resolves multiple simultaneous "hits" into one final pixel color |
-| Z-order | Priority convention for which object wins when shapes overlap (lower slot = higher priority) |
-| RGB444 | 12-bit color format, 4 bits each for red/green/blue |
-| BRAM | Block RAM (on-chip memory), used for font storage in `text_overlay` |
+```c
+GPU_SetBackgroundColor(0, 0, 0);
+GPU_ConfigureObject(0, 100, 80, 40, 30, SHAPE_RECTANGLE, 15, 0, 0, 1);
+GPU_TextPutString(0, 2, "READY", 0xFFF);
+```
 
 ---
 
-## Quick Start / Contributor Notes
+## 8. Coding Conventions (SystemVerilog)
 
-1. **Review Section 7 (Build Phases)** to understand current progress.
-2. **All modules must follow Section 6 (Coding Conventions).**
-3. **Run testbenches in `TB/`** before integrating changes.
-4. **Update this README** and commit as part of your PR.
-5. **Treat this file as the authoritative contract** for interfaces, data formats, and workflow.
+Each SystemVerilog file should follow the project conventions below:
+
+- Add a file-level header comment:
+
+```systemverilog
+// ============================================================
+// Module: <module_name>
+// Purpose: <one line>
+// ============================================================
+```
+
+- Use `` `default_nettype none `` at the top of every file to catch accidental typos.
+- Use `always_comb` for combinational logic rather than `always @(*)`.
+- Use `always_ff @(posedge clk)` for sequential logic.
+- Use synchronous active-low reset (`reset`) when appropriate.
+- Avoid inferred latches; every combinational branch must assign all outputs.
+- Prefer parameterized widths over hardcoded literals.
+- Keep the pixel pipeline in one clock domain; the MicroBlaze/AXI side is separate.
+
+---
+
+## 9. Build Phases — Current Status
+
+| Phase | Description | Status |
+|---|---|---|
+| **1** | Single hardcoded rectangle + testbench | ✅ Done |
+| **2** | Add circle shape support | ✅ Done |
+| **3** | Two hardcoded instances + manual mux | ✅ Done |
+| **4** | Registers instead of hardcoded parameters | ✅ Done |
+| **5** | Generalize to N via generate loop | ✅ Done (default `N=25`) |
+| **6** | Address decode (pre-AXI bus) | ✅ Done |
+| **7** | AXI4-Lite wrapping (Vivado IP) | ✅ Done |
+| **8** | MicroBlaze + interconnect + block design | ✅ Done |
+| **9** | Game logic on MicroBlaze | ✅ Done |
+| **10** | Text overlay with BRAM font | ✅ Done |
+| **11** | Polish, tuning, and cleanup | 🔄 In progress |
+
+### Completed milestones
+
+- ✅ All RTL modules tested in simulation
+- ✅ AXI4-Lite IP packaged and integrated
+- ✅ MicroBlaze application with full game logic
+- ✅ Text rendering system with font ROM
+- ✅ Multiple test benches validating each layer
+
+---
+
+## 10. Simulation Strategy
+
+The project includes focused test benches for each hardware block:
+
+- `tb_compositor.sv`: validates overlap priority and z-order behavior
+- `reg_tb.sv`: checks register unpacking and write behavior
+- `object_array_tb.sv`: validates address decode and slot routing
+- `tb_vga_top.sv`: runs a full-frame integration simulation and emits `.vcd` output for waveform inspection
+
+### Hardware bring-up order
+
+1. Simulate and validate the core pipeline before adding AXI wrapping.
+2. Generate the custom IP in Vivado.
+3. Instantiate the MicroBlaze, interconnect, BRAM controller, and clocking wizard in the block design.
+4. Load a compiled `.elf` onto the board and test simple object movement and register writes.
+5. Bring up game logic and text rendering once the base display pipeline is stable.
+
+### Common causes of display failure
+
+If nothing appears on the monitor after the block design is loaded:
+
+- Validate the AXI address map in Vivado.
+- Confirm the pixel clock is running at the expected 25 MHz.
+- Check the VGA pin assignments against the Basys 3 XDC.
+- Verify that the BRAM, interconnect, and custom IP are all connected correctly.
+
+---
+
+## 11. Vivado Build Notes (Basys 3 specific)
+
+- Board clock: 100 MHz on the Basys 3 board clock input
+- Pixel clock: 25 MHz generated via the Clocking Wizard for 640×480@60Hz VGA output
+- Block design contains MicroBlaze, AXI interconnect, BRAM controller, and the custom GPU peripheral
+- Use the standard Digilent Basys 3 master XDC as the starting point and assign the VGA output pins correctly
+- If the custom IP is not visible in Vivado, add the repository directory under IP Catalog → Add Repository
+
+---
+
+## 12. Git Workflow
+
+- Use a separate branch for each feature or fix
+- Do not commit directly to `main` without review
+- Update the Module Inventory and Build Phases sections as part of PRs that change hardware or software behavior
+- Commit relevant Vivado files such as `.bd`, `.tcl`, and `.xci` when needed
+- Do not commit generated artifacts such as `.runs/`, `.cache/`, `.sim/`, or build output
 
 ---
 
 ## 13. Performance & Hardware Resource Notes
 
-- **Default configuration:** `NUM_OBJECTS = 25`, 640×480@60Hz, 100 MHz system clock.
-- **LUT usage:** Approximately 20–30% of XC7A35T for full design (varies with shape complexity).
-- **BRAM usage:** ~4 blocks (one for font ROM in `text_overlay`, one for BRAM controller in Block Design).
-- **Timing closure:** Runs comfortably at 100 MHz; pixel-clock-domain logic (vga_controller) is pipelined to run at 25 MHz effective rate.
+- Default configuration: `NUM_OBJECTS = 25`, 640×480@60Hz display, 100 MHz system clock
+- LUT usage: roughly 20–30% of the XC7A35T fabric depending on complexity
+- BRAM usage: a few blocks for font storage and block design memory
+- Timing closure: the design runs comfortably at 100 MHz; the VGA pixel pipeline runs at the effective 25 MHz pixel rate
 
 ---
 
-*Maintainers: update this document whenever a phase changes an interface, register map, or convention. Treat drift between this file and the code as a bug.*
+## 14. Glossary
+
+| Term | Meaning |
+|---|---|
+| Slot | One object instance in the object array |
+| Hit / Active | A signal indicating the current pixel belongs to a sprite |
+| Compositor | Logic that resolves multiple sprite hits into one final pixel |
+| Z-order | Priority rule for overlapping objects (lower slot index wins) |
+| RGB444 | 12-bit color format using 4 bits per channel |
+| BRAM | Block RAM used for font storage and on-chip memory |
+
+---
+
+## Quick Start / Contributor Notes
+
+1. Review the Build Phases section to understand the current project status.
+2. Follow the SystemVerilog coding conventions.
+3. Run the existing testbenches in `TB/` before integrating changes.
+4. Update this README whenever the interface, register map, or workflow changes.
+5. Treat this file as the source of truth for architecture, behavior, and contributor expectations.
+
+---
+
+## Maintainer Note
+
+This document should remain synchronized with the codebase. If a module interface, register map, timing assumption, or design convention changes, update the relevant section in this README as part of the same change.
+
+---
+
+The goal of this project is to provide a clean, practical FPGA graphics pipeline that combines programmable logic, software control, and real display output on a low-cost development board.
